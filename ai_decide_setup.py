@@ -20,13 +20,20 @@ KEYWORDS = {
         r"(punctur|rupture)\w*\W+(?:\w+\W+){0,2}tank", r"tank\W+(?:\w+\W+){0,2}(punctur|rupture)",
         r"saddle tank", r"antifreeze", r"\bsheen\b", r"absorbent", r"spill kit", r"\bdrip", r"\bquarts?\b", r"\bpints?\b", r"(minor|small) (leak|spill)", r"few gallons",
     ],
-    "fuel_spill_large": [r"hazmat", r"haz.?mat", r"hazardous", r"tanker", r"environmental", r"clean.?up crew", r"containment", r"\d{3,}\s*gal", r"\d{1,3},\d{3}\s*gal", r"\bepa\b", r"remediation", r"contaminat", r"storm drain", r"waterway", r"wetland", r"evacuation", r"placard", r"flammable", r"corrosive", r"chlorine", r"ammonia", r"propane", r"\bchemicals?\b", r"cargo tank", r"national response center", r"\bnrc\b", r"reportable quantity", r"state environmental"],
-    "business_interruption": [r"business interruption", r"interruption of business", r"lost (income|revenue|business|wages)", r"loss of (income|revenue|business)", r"shut.?down", r"(cannot|unable to) operate", r"business income", r"extra expense", r"lost profit", r"loss of earnings", r"ceased operations", r"suspended operations", r"\bidled\b", r"sitting idle", r"missed deliver", r"late deliver", r"contract penalt", r"liquidated damages", r"detention (time|pay|charge)", r"demurrage", r"only truck", r"no spare (unit|truck)", r"owner.?operator", r"livelihood"],
-    "downtime": [r"down.?time", r"out of service", r"loss of use", r"rental", r"inoperable", r"not drivable", r"undrivable", r"unit down", r"(truck|tractor|trailer) (is|was) down", r"awaiting parts", r"waiting (on|for) parts", r"parts on order", r"backorder", r"replacement (tractor|trailer|truck|vehicle|unit)", r"(weeks|months) (to|for) (repair|fix)"],
+    "fuel_spill_large": [r"hazmat", r"haz.?mat", r"hazardous", r"environmental", r"clean.?up crew", r"containment", r"\d{3,}\s*gal", r"\d{1,3},\d{3}\s*gal", r"\bepa\b", r"remediation", r"contaminat", r"storm drain", r"waterway", r"wetland", r"evacuation", r"placard", r"flammable", r"corrosive", r"chlorine", r"ammonia", r"propane", r"\bchemicals?\b", r"cargo tank", r"national response center", r"\bnrc\b", r"reportable quantity", r"state environmental"],
+    "business_interruption": [r"business interruption", r"interruption of business", r"lost (income|revenue|business|wages)", r"loss of (income|revenue|business)", r"shut.?down", r"(cannot|unable to) operate", r"business income", r"extra expense", r"lost profit", r"loss of earnings", r"ceased operations", r"suspended operations", r"\bidled\b", r"sitting idle", r"missed deliver", r"late deliver", r"contract penalt", r"liquidated damages", r"detention (time|pay|charge)", r"demurrage", r"only truck", r"no spare (unit|truck)", r"livelihood"],
+    "downtime": [r"down.?time", r"out of service", r"inoperable", r"not drivable", r"undrivable", r"unit down", r"(truck|tractor|trailer) (is|was) down", r"awaiting parts", r"waiting (on|for) parts", r"parts on order", r"backorder", r"replacement (tractor|trailer|truck|vehicle|unit)", r"(weeks|months) (to|for) (repair|fix)"],
     "litigation": [r"attorney", r"lawyer", r"lawsuit", r"\bsued\b", r"\bsuit\b", r"litigation", r"legal action", r"demand letter", r"counsel", r"law firm", r"letter of representation", r"esquire", r"\besq\b", r"summons", r"subpoena", r"small claims", r"preservation letter", r"spoliation", r"served with"],
     "third_party_property": [r"fence", r"building", r"storefront", r"garage", r"\bhouse\b", r"\bpole\b", r"guard.?rail", r"(road|street|traffic|stop) sign", r"mailbox", r"\bgate\b", r"canopy", r"awning", r"overhang", r"(gas pump|pump island|fuel island)", r"loading dock", r"hydrant", r"\bmedian\b", r"bollard", r"property owner", r"municipal", r"traffic signal", r"street.?light", r"lamp.?post", r"\bwall\b"],
     "bridge_or_railroad": [r"bridge", r"overpass", r"underpass", r"viaduct", r"railroad", r"railway", r"rail crossing", r"grade crossing", r"crossing gate", r"\btrain\b", r"low clearance", r"trestle", r"causeway", r"culvert", r"tunnel", r"locomotive", r"amtrak", r"\bcsx\b", r"norfolk southern", r"conrail", r"union pacific", r"\bbnsf\b", r"canadian pacific", r"canadian national", r"high.?cent", r"hung up on (the )?tracks", r"stuck on (the )?tracks", r"height restriction"],
     "fraud_indicators": [r"fraud", r"suspicious", r"staged", r"inconsistent", r"\bsiu\b", r"special investigation", r"discrepanc", r"pre.?existing", r"prior damage", r"recant", r"changed (his|her|their) story", r"\beuo\b", r"exam under oath", r"late report", r"reported late", r"owner give.?up", r"damage (does not|doesn.t) match", r"iso hit", r"claimsearch", r"brake.?check", r"phantom passenger", r"exaggerat"],
+}
+
+# evidence for level 2, claims with none of this and no other trigger become unknown
+LEVEL_2_KEYWORDS = {
+    "two_vehicles": [r"two (vehicles|cars|trucks|units|autos)", r"\b2 (vehicles|cars|trucks|units|autos)", r"both (vehicles|cars|trucks|drivers)", r"rear.?end", r"t.?bone", r"side.?swipe", r"other (vehicle|driver|party)", r"\bv-?2\b", r"vehicle\s*#?\s*2\b", r"unit\s*#?\s*2\b"],
+    "claimant_involved": [r"claimant", r"third.?party"],
+    "adverse_subrogation": [r"subro", r"reimburs", r"other carrier", r"adverse carrier", r"their (insurer|carrier)", r"arbitration forums", r"inter.?company"],
 }
 
 # information only, these do not change the tier
@@ -44,10 +51,11 @@ INFO_KEYWORDS = {
 SPECIALTY = ["fuel_spill_large", "business_interruption", "third_party_property_litigation", "bridge_or_railroad"]
 LEVEL_3 = ["three_or_more_vehicles", "fuel_spill_small", "fraud_indicators", "downtime"]
 FAST_TRACK = ["glass_only", "tow_only", "animal_strike"]
+LEVEL_2 = ["theft", "two_vehicles", "claimant_involved", "adverse_subrogation"]
 
 df = spark.table(SOURCE_TABLE).select(ID_COL, TEXT_COL)
 
-hits = [F.when(F.col(TEXT_COL).rlike("(?i)" + "|".join(words)), F.lit(flag)) for flag, words in {**KEYWORDS, **INFO_KEYWORDS}.items()]
+hits = [F.when(F.col(TEXT_COL).rlike("(?i)" + "|".join(words)), F.lit(flag)) for flag, words in {**KEYWORDS, **LEVEL_2_KEYWORDS, **INFO_KEYWORDS}.items()]
 df = df.withColumn("flags", F.filter(F.array(*hits), lambda x: x.isNotNull()))
 
 
@@ -64,7 +72,8 @@ df = df.withColumn(
     F.when(has(*SPECIALTY), "specialty")
     .when(has(*LEVEL_3), "level_3")
     .when(has(*FAST_TRACK) & ~has("fire", "theft"), "fast_track")
-    .otherwise("level_2"),
+    .when(has(*LEVEL_2), "level_2")
+    .otherwise("unknown"),
 )
 
 df.drop(TEXT_COL).write.mode("overwrite").saveAsTable(OUT_TABLE)
