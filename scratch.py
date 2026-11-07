@@ -1,13 +1,20 @@
-from sklearn.metrics import precision_recall_curve, precision_score, recall_score
+from sklearn.metrics import confusion_matrix, precision_recall_curve
 
-col = list(text_model.classes_).index("fast_track")
-proba = text_model.predict_proba(words_test)[:, col]
-y_true = (test[LABEL_COL] == "fast_track").to_numpy()
-y_default = text_model.predict(words_test) == "fast_track"
+TIER = ""
+PRECISION_TARGET = 0.90
 
-print("classes", text_model.classes_)
-print("positives", y_true.sum(), "of", len(y_true))
-print("default cutoff: precision", precision_score(y_true, y_default), "recall", recall_score(y_true, y_default))
+def get_probs(d):
+    words = words_and_chars.transform(d[TEXT_COL])
+    return text_model.predict_proba(words)[:, list(text_model.classes_).index(TIER)]
 
-precision, recall, cutoff = precision_recall_curve(y_true, proba)
-print("best precision on the curve", precision[:-1].max())
+val_probs = get_probs(val)
+y_val = (val["tier_notes"] == TIER).astype(int).to_numpy()
+
+precision, recall, thresholds = precision_recall_curve(y_val, val_probs)
+cutoff = thresholds[precision[:-1] >= PRECISION_TARGET][0]
+
+for name, d in [("val", val), ("test", test)]:
+    y = (d["tier_notes"] == TIER).astype(int).to_numpy()
+    pred = (get_probs(d) >= cutoff).astype(int)
+    tn, fp, fn, tp = confusion_matrix(y, pred).ravel()
+    print(name, "base rate", y.mean(), "precision", tp / (tp + fp), "recall", tp / (tp + fn), "fpr", fp / (fp + tn))
