@@ -1,10 +1,13 @@
-from pyspark.sql import functions as F
+PRED_COL = "pred"
+COST_COL = "incurred"
+EXPENSIVE_THRESHOLD = 50000
 
-total = df.count()
+fast_tracked = df[df[PRED_COL] == POSITIVE_LABEL]
+wrong = fast_tracked[fast_tracked[NEW_COL] != POSITIVE_LABEL]
 
-nulls = df.select([F.sum(F.col(c).isNull().cast("int")).alias(c) for c in df.columns]).toPandas().T
-nulls.columns = ["nulls"]
-nulls["null_share"] = (nulls["nulls"] / total).round(3)
-nulls["non_null"] = total - nulls["nulls"]
+# share of fast-tracked dollars that were wrongly fast tracked
+dollar_leakage = wrong[COST_COL].sum() / fast_tracked[COST_COL].sum()
 
-print(nulls.sort_values("null_share", ascending=False).to_string())
+# share of expensive claims that got fast tracked
+expensive = df[df[COST_COL] >= EXPENSIVE_THRESHOLD]
+expensive_fast_tracked_rate = (expensive[PRED_COL] == POSITIVE_LABEL).mean()
