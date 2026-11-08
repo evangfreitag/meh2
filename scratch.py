@@ -1,6 +1,6 @@
 PRED_COL = "pred"
 COST_COL = "incurred"
-EXPENSIVE_THRESHOLD = 50000
+EXPENSIVE_THRESHOLD = 1
 
 fast_tracked = df[df[PRED_COL] == POSITIVE_LABEL]
 wrong = fast_tracked[fast_tracked[NEW_COL] != POSITIVE_LABEL]
