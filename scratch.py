@@ -1,20 +1,10 @@
-from sklearn.metrics import confusion_matrix, precision_recall_curve
+from pyspark.sql import functions as F
 
-TIER = ""
-PRECISION_TARGET = 0.90
+total = df.count()
 
-def get_probs(d):
-    words = words_and_chars.transform(d[TEXT_COL])
-    return text_model.predict_proba(words)[:, list(text_model.classes_).index(TIER)]
+nulls = df.select([F.sum(F.col(c).isNull().cast("int")).alias(c) for c in df.columns]).toPandas().T
+nulls.columns = ["nulls"]
+nulls["null_share"] = (nulls["nulls"] / total).round(3)
+nulls["non_null"] = total - nulls["nulls"]
 
-val_probs = get_probs(val)
-y_val = (val["tier_notes"] == TIER).astype(int).to_numpy()
-
-precision, recall, thresholds = precision_recall_curve(y_val, val_probs)
-cutoff = thresholds[precision[:-1] >= PRECISION_TARGET][0]
-
-for name, d in [("val", val), ("test", test)]:
-    y = (d["tier_notes"] == TIER).astype(int).to_numpy()
-    pred = (get_probs(d) >= cutoff).astype(int)
-    tn, fp, fn, tp = confusion_matrix(y, pred).ravel()
-    print(name, "base rate", y.mean(), "precision", tp / (tp + fp), "recall", tp / (tp + fn), "fpr", fp / (fp + tn))
+print(nulls.sort_values("null_share", ascending=False).to_string())
