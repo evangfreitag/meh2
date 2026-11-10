@@ -1,9 +1,10 @@
+LABEL_COL = "cost_flag"
 PRECISION_TARGET = 0.90
 VAL = ...
 TEST = test
 
-y_val = (VAL["cost_flag"] == "fast_track").astype(int)
-y_test = (TEST["cost_flag"] == "fast_track").astype(int)
+y_val = (VAL[LABEL_COL] == "fast_track").astype(int)
+y_test = (TEST[LABEL_COL] == "fast_track").astype(int)
 
 rows = []
 for which in ["text", "structured", "stacked"]:
