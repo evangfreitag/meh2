@@ -1,3 +1,1 @@
-for d in (train, val, test):
-    d["cost_flag"] = np.where(d["gross_total"].fillna(0) <= 2500, "fast_track", "otherwise")
-    print(d["cost_flag"].value_counts().to_dict())
+print(len(test), test["total_paid"].isna().sum(), (test["total_paid"] <= 2500).sum(), test["cost_flag"].eq("fast_track").sum())
