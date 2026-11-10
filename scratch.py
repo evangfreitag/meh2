@@ -1,17 +1,44 @@
-POSITIVE = "fast_track"
+import pandas as pd
+from sklearn.metrics import precision_recall_curve, average_precision_score, precision_score, recall_score, confusion_matrix
 
-def get_probs(which):
+
+
+def get_probs(which, data):
+    words = words_and_chars.transform(data[TEXT_COL])
+    S = struct_features(data)[list(S_train.columns)]
     if which == "text":
-        model, X_val, X_test = text_model, words_val, words_test
+        model, X = text_model, words
     elif which == "structured":
-        cols = list(S_train.columns)
-        model, X_val, X_test = struct_model, S_val[cols], S_test[cols]
-    elif which == "stacked":
-        cols = list(C_train.columns)
-        X_val = S_val.assign(**{f"text_{t}": text_model.predict_proba(words_val)[:, i] for i, t in enumerate(text_model.classes_)})[cols]
-        X_test = S_test.assign(**{f"text_{t}": text_model.predict_proba(words_test)[:, i] for i, t in enumerate(text_model.classes_)})[cols]
+        model, X = struct_model, S
+    else:
+        X = S.assign(**{f"text_{t}": text_model.predict_proba(words)[:, i] for i, t in enumerate(text_model.classes_)})[list(C_train.columns)]
         model = stacked_model
-    idx = list(model.classes_).index(POSITIVE)
-    return model.predict_proba(X_val)[:, idx], model.predict_proba(X_test)[:, idx]
+    return model.predict_proba(X)[:, list(model.classes_).index("fast_track")]
 
-val_probs, test_probs = get_probs("stacked")
+probs = get_probs("stacked", EVAL)
+
+
+
+
+PRECISION_TARGET = 0.90
+y_val = (val["cost_flag"] == "fast_track").astype(int)
+y_test = (test["cost_flag"] == "fast_track").astype(int)
+
+rows = []
+for which in ["text", "structured", "stacked"]:
+    val_probs, test_probs = get_probs(which)
+    p, r, t = precision_recall_curve(y_val, val_probs)
+    cutoff = t[p[:-1] >= PRECISION_TARGET][0]
+    pred = (test_probs >= cutoff).astype(int)
+    tn, fp, fn, tp = confusion_matrix(y_test, pred).ravel()
+    rows.append({
+        "model": which,
+        "AP": round(average_precision_score(y_test, test_probs), 3),
+        "cutoff": round(cutoff, 4),
+        "precision": round(precision_score(y_test, pred), 3),
+        "recall": round(recall_score(y_test, pred), 3),
+        "flagged": int(pred.sum()),
+        "false_pos": int(fp),
+    })
+
+print(pd.DataFrame(rows).to_string(index=False))
