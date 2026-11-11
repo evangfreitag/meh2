@@ -1,23 +1,11 @@
-import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.inspection import permutation_importance
+def pivot_agg(df, key, col, agg_expr, prefix):
+    clean = F.lower(F.trim(F.col(col)))
+    clean = F.regexp_replace(clean, r"[^a-z0-9]+", "_")
+    clean = F.regexp_replace(clean, r"^_+|_+$", "")
+    clean = F.when(clean.isNull() | (clean == ""), F.lit("unknown")).otherwise(clean)
+    d = df.withColumn(col, clean)
+    out = d.groupBy(key).pivot(col).agg(agg_expr).fillna(0)
+    return out.toDF(*[c if c == key else f"{prefix}{c}" for c in out.columns])
 
-LABEL_COL = "cost_flag"
-TOP_N = 25
-SAMPLE = 3000
-
-data = VAL.sample(min(SAMPLE, len(VAL)), random_state=0)
-words = words_and_chars.transform(data[TEXT_COL])
-S = struct_features(data)[list(S_train.columns)]
-X = S.assign(**{f"text_{t}": text_model.predict_proba(words)[:, i] for i, t in enumerate(text_model.classes_)})[list(C_train.columns)]
-y = data[LABEL_COL]
-
-imp = permutation_importance(combined_model, X, y, scoring="roc_auc", n_repeats=3, random_state=0)
-
-order = imp.importances_mean.argsort()[::-1][:TOP_N][::-1]
-plt.figure(figsize=(8, 10))
-plt.barh(np.array(X.columns)[order], imp.importances_mean[order])
-plt.xlabel("Drop in ROC AUC when the variable is shuffled")
-plt.title(f"Top {TOP_N} variables, combined model")
-plt.tight_layout()
-plt.show()
+flags = pivot_agg(df, "claim_number", "term", F.max("indicator"), "term_")
+counts = pivot_agg(df, "claim_number", "term", F.count("term"), "term_")
