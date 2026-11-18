@@ -1,27 +1,5 @@
-def build_run_dates(df, run_id_col, date_col, out_col="run_date"):
-    return df.groupBy(run_id_col).agg(F.max(date_col).alias(out_col))
-
-def notes_since_last_run(runs, run_dates, notes, key, run_id_col, run_date_col, note_date_col, note_col, sep=" "):
-    r = runs.join(run_dates, run_id_col)
-    w = Window.partitionBy(key).orderBy(run_id_col)
-    r = r.withColumn("_prev", F.lag(run_date_col).over(w))
-    n = notes.select(F.col(key).alias("_k"), note_date_col, note_col)
-    cond = ((r[key] == n["_k"]) & (n[note_date_col] <= r[run_date_col])
-            & (r["_prev"].isNull() | (n[note_date_col] > r["_prev"])))
-    j = r.join(n, cond, "left")
-    agg = (j.groupBy(key, run_id_col)
-            .agg(F.sort_array(F.collect_list(F.when(F.col(note_col).isNotNull(), F.struct(note_date_col, note_col)))).alias("_s")))
-    text = F.concat_ws(sep, F.col(f"_s.{note_col}"))
-    return (agg.withColumn("notes_text", F.when(F.size("_s") > 0, text)).drop("_s")
-               .join(r.drop("_prev"), [key, run_id_col]))
-
-def notes_for_runs(model_output, notes, key, run_id_col, score_date_col, note_date_col, note_col, sep=" "):
-    run_dates = build_run_dates(model_output, run_id_col, score_date_col)
-    runs = model_output.select(key, run_id_col).distinct()
-    return notes_since_last_run(runs, run_dates, notes, key, run_id_col, "run_date", note_date_col, note_col, sep)
-
-
-run_dates = build_run_dates(model_output, "model_run_id", "score_date")
-out = notes_for_runs(model_output, notes, "claim_id", "model_run_id", "score_date", "note_date", "note_text")
-
-
+def sample_per_label(df, label_col, key, n, seed=0):
+    w1 = Window.partitionBy(label_col, key).orderBy(F.rand(seed))
+    one = df.withColumn("_r", F.row_number().over(w1)).filter("_r = 1").drop("_r")
+    w2 = Window.partitionBy(label_col).orderBy(F.rand(seed + 1))
+    return one.withColumn("_rn", F.row_number().over(w2)).filter(F.col("_rn") <= n).drop("_rn")
