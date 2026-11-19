@@ -15,14 +15,15 @@ def highlight_html(text, spans):
     return "".join(out)
 
 def get_spans(keywords, text):
-    kws = sorted({k for k in (keywords if keywords is not None else []) if k}, key=len, reverse=True)
+    kws = sorted({k.strip() for k in (keywords or "").split(",") if k.strip()}, key=len, reverse=True)
     if not kws:
         return []
     pat = re.compile("|".join(re.escape(k) for k in kws), re.IGNORECASE)
     return [(m.start(), m.end()) for m in pat.finditer(text)]
 
 def outcome_mask(pdf, pred_col, label_col, positive):
-    pred, actual = pdf[pred_col] == positive, pdf[label_col] == positive
+    pred = pdf[pred_col].apply(lambda a: a is not None and positive in list(a))   # AI label is an array
+    actual = pdf[label_col] == positive                                           # other label is a string
     return {"fp": pred & ~actual, "tp": pred & actual, "fn": ~pred & actual, "tn": ~pred & ~actual}
 
 def make_viewer(pdf, pred_col, label_col, positive, id_col, text_col, kw_col):
