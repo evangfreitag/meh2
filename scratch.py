@@ -1,30 +1,51 @@
-import pandas as pd
-
-def as_list(v):
-    if isinstance(v, str):
-        return [v]
-    if v is None or isinstance(v, float):
-        return ["none"]
-    return [str(c) for c in v] or ["none"]
-
-def confusion_table(df, pred_col, truth_col):
-    pairs = pd.DataFrame({"truth": df[truth_col].apply(as_list), "pred": df[pred_col].apply(as_list)})
-    pairs = pairs.explode("truth").reset_index(drop=True).explode("pred")
-    return pd.crosstab(pairs["truth"], pairs["pred"])
-
-def class_metrics(df, pred_col, truth_col):
+def ai_detail_html(labels, scores, rationales, selected):
+    def seq(v):
+        return [] if v is None or isinstance(v, float) else list(v)
+    labels, scores, rationales = seq(labels), seq(scores), seq(rationales)
     rows = []
-    for cls in sorted(set(all_classes(df, pred_col)) | set(all_classes(df, truth_col))):
-        m = outcome_mask(df, pred_col, truth_col, cls)
-        tp, fp, fn, tn = (int(m[k].sum()) for k in ("tp", "fp", "fn", "tn"))
-        precision = tp / (tp + fp) if tp + fp else None
-        recall = tp / (tp + fn) if tp + fn else None
-        f1 = 2 * precision * recall / (precision + recall) if precision and recall else None
-        rows.append({"class": cls, "truth_positives": tp + fn, "predicted_positives": tp + fp, "tp": tp, "fp": fp, "fn": fn, "tn": tn,
-                     "precision": None if precision is None else round(precision, 3),
-                     "recall": None if recall is None else round(recall, 3),
-                     "f1": None if f1 is None else round(f1, 3)})
-    return pd.DataFrame(rows)
+    for i in range(max(len(labels), len(scores), len(rationales))):
+        label = labels[i] if i < len(labels) else "?"
+        score = scores[i] if i < len(scores) else None
+        reason = rationales[i] if i < len(rationales) else None
+        score_txt = "" if score is None or score != score else f" &nbsp; score {float(score):.2f}"
+        mark = " &nbsp; <b>[selected class]</b>" if label == selected else ""
+        rows.append(f"<div style='margin:6px 0'><b>{html.escape(str(label))}</b>{score_txt}{mark}<br>{html.escape(str(reason or ''))}</div>")
+    return "".join(rows) or "AI: no labels"
 
-display(confusion_table(df, "spacy_label", "ai_label"))
-display(class_metrics(df, "spacy_label", "ai_label"))
+def run_viewer(df, pred_col, truth_col, id_col, text_col, kw_col, score_col, rationale_col):
+    cls_dd = widgets.Dropdown(options=all_classes(df, pred_col), description="class")
+    which_dd = widgets.Dropdown(options=[("false positive", "fp"), ("true positive", "tp"), ("false negative", "fn"), ("true negative", "tn")], description="outcome")
+    claim_dd = widgets.Dropdown(description="claim")
+    out = widgets.Output()
+
+    def group():
+        return df[outcome_mask(df, pred_col, truth_col, cls_dd.value)[which_dd.value]]
+
+    def render(_=None):
+        sub = group()
+        with out:
+            clear_output(wait=True)
+            if sub.empty or claim_dd.value is None:
+                display(HTML("no claims in this group"))
+                return
+            r = sub.iloc[claim_dd.value]
+            text, kws = r[text_col], r[kw_col]
+            n = len(get_spans(kws, text))
+            head = (f"<b>{html.escape(str(r[id_col]))}</b> &nbsp; {pred_col}={html.escape(str(r[pred_col]))} &nbsp; {truth_col}={html.escape(str(r[truth_col]))}"
+                    f"<br>keywords: {html.escape(str(kws))} &nbsp; ({n} highlighted) &nbsp; text length: {len(text)}")
+            ai = ai_detail_html(r[truth_col], r[score_col], r[rationale_col], cls_dd.value)
+            display(HTML(f"<div style='max-width:900px;line-height:1.5'>{head}<hr>{ai}<hr>{highlight_html(text, get_spans(kws, text))}</div>"))
+
+    def refresh(_=None):
+        sub = group()
+        claim_dd.unobserve(render, names="value")
+        claim_dd.options = [(str(v), i) for i, v in enumerate(sub[id_col])]
+        claim_dd.value = 0 if len(sub) else None
+        claim_dd.observe(render, names="value")
+        render()
+
+    cls_dd.observe(refresh, names="value")
+    which_dd.observe(refresh, names="value")
+    claim_dd.observe(render, names="value")
+    display(widgets.HBox([cls_dd, which_dd, claim_dd]), out)
+    refresh()
