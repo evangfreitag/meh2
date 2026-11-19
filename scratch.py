@@ -1,3 +1,6 @@
+AMBULANCE = r"(?i)\b(ambulance|paramedics?)\b|\bEMS\b"
+ER = r"(?i)\b(emergency (room|department|dept)|urgent care)\b|\bER\b"
+
 import numpy as np
 
 
