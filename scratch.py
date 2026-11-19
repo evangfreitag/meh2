@@ -21,23 +21,34 @@ def get_spans(keywords, text):
     pat = re.compile("|".join(re.escape(k) for k in kws), re.IGNORECASE)
     return [(m.start(), m.end()) for m in pat.finditer(text)]
 
-def outcome_mask(pdf, pred_col, label_col, positive):
-    pred = pdf[pred_col].apply(lambda a: a is not None and positive in list(a))   # AI label is an array
-    actual = pdf[label_col] == positive                                           # other label is a string
+def has_class(value, cls):
+    if isinstance(value, str):
+        return value == cls
+    if value is None or isinstance(value, float):      # null (None or NaN)
+        return False
+    return cls in list(value)
+
+def outcome_mask(df, pred_col, truth_col, positive):
+    pred = df[pred_col].apply(lambda v: has_class(v, positive))
+    actual = df[truth_col].apply(lambda v: has_class(v, positive))
     return {"fp": pred & ~actual, "tp": pred & actual, "fn": ~pred & actual, "tn": ~pred & ~actual}
 
-def all_classes(pdf, pred_col, label_col):
-    ai = {str(c) for a in pdf[pred_col] if a is not None for c in a}
-    return sorted(ai | set(pdf[label_col].dropna()))
+def all_classes(df, col):
+    found = set()
+    for v in df[col]:
+        if v is None or (isinstance(v, float) and v != v):
+            continue
+        found |= {v} if isinstance(v, str) else {str(c) for c in v}
+    return sorted(found)
 
-def run_viewer(pdf, pred_col, label_col, id_col, text_col, kw_col):
-    cls_dd = widgets.Dropdown(options=all_classes(pdf, pred_col, label_col), description="class")
+def run_viewer(df, pred_col, truth_col, id_col, text_col, kw_col):
+    cls_dd = widgets.Dropdown(options=all_classes(df, pred_col), description="class")
     which_dd = widgets.Dropdown(options=[("false positive", "fp"), ("true positive", "tp"), ("false negative", "fn"), ("true negative", "tn")], description="outcome")
     claim_dd = widgets.Dropdown(description="claim")
     out = widgets.Output()
 
     def group():
-        return pdf[outcome_mask(pdf, pred_col, label_col, cls_dd.value)[which_dd.value]]
+        return df[outcome_mask(df, pred_col, truth_col, cls_dd.value)[which_dd.value]]
 
     def render(_=None):
         sub = group()
@@ -49,7 +60,7 @@ def run_viewer(pdf, pred_col, label_col, id_col, text_col, kw_col):
             r = sub.iloc[claim_dd.value]
             text, kws = r[text_col], r[kw_col]
             n = len(get_spans(kws, text))
-            head = (f"<b>{html.escape(str(r[id_col]))}</b> &nbsp; {pred_col}={html.escape(str(r[pred_col]))} &nbsp; {label_col}={html.escape(str(r[label_col]))}"
+            head = (f"<b>{html.escape(str(r[id_col]))}</b> &nbsp; {pred_col}={html.escape(str(r[pred_col]))} &nbsp; {truth_col}={html.escape(str(r[truth_col]))}"
                     f"<br>keywords: {html.escape(str(kws))} &nbsp; ({n} highlighted) &nbsp; text length: {len(text)}")
             display(HTML(f"<div style='max-width:900px;line-height:1.5'>{head}<hr>{highlight_html(text, get_spans(kws, text))}</div>"))
 
@@ -66,6 +77,3 @@ def run_viewer(pdf, pred_col, label_col, id_col, text_col, kw_col):
     claim_dd.observe(render, names="value")
     display(widgets.HBox([cls_dd, which_dd, claim_dd]), out)
     refresh()
-
-pdf = out.limit(2000).toPandas()
-run_viewer(pdf, "ai_label", "spacy_label", "claim_id", "notes_text", "keywords")
