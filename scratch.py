@@ -1,35 +1,37 @@
-from pyspark.sql import functions as F
-
-MENTION = r"(?i)\b(hospital\w*|admitted|admission|inpatient|discharged|icu)\b"
-DATE = r"(\d{1,2}/\d{1,2}/\d{2,4})"
-
-
-def to_date(col):
-    four = F.expr(f"try_to_date({col}, 'M/d/yyyy')")
-    two = F.expr(f"try_to_date({col}, 'M/d/yy')")
-    return F.when(F.col(col).rlike(r"/\d{4}$"), four).otherwise(two)
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.metrics import average_precision_score, precision_recall_curve
 
 
-def extract_hospital(df, text_col):
-    t = F.col(text_col)
-    admit = F.nullif(F.regexp_extract(t, r"(?i)admitted[^.]{0,40}?" + DATE, 1), F.lit(""))
-    disch = F.nullif(F.regexp_extract(t, r"(?i)discharged[^.]{0,40}?" + DATE, 1), F.lit(""))
-    d1 = F.nullif(F.regexp_extract(t, r"(?i)(\d+)\s*(?:days?|nights?)\s*(?:in|at)\s*(?:the\s*)?hospital", 1), F.lit(""))
-    d2 = F.nullif(F.regexp_extract(t, r"(?i)hospitali[sz]ed\s*(?:for\s*)?(\d+)\s*(?:days?|nights?)", 1), F.lit(""))
-    out = (df.withColumn("_admit", admit).withColumn("_disch", disch)
-             .withColumn("days_stated", F.coalesce(d1, d2).cast("int")))
-    out = (out.withColumn("hospital_admit_date", to_date("_admit"))
-              .withColumn("hospital_discharge_date", to_date("_disch"))
-              .drop("_admit", "_disch"))
-    calc = F.datediff("hospital_discharge_date", "hospital_admit_date")
-    out = out.withColumn("days_in_hospital", F.coalesce("days_stated", calc))
-    return out.withColumn("hospital_mentioned", F.coalesce(t.rlike(MENTION), F.lit(False)).cast("int"))
+def synthetic_features(X, y, level, rng):
+    y = np.asarray(y)
+    n = len(y)
+    flag = rng.random(n) < np.where(y == 1, 0.3 + 0.4 * level, 0.3)
+    base = np.full(5, 0.2)
+    skew = np.array([0.05, 0.10, 0.20, 0.30, 0.35])
+    probs = np.where(y[:, None] == 1, (1 - level) * base + level * skew, base)
+    cat = (probs.cumsum(axis=1) < rng.random(n)[:, None]).sum(axis=1)
+    score = 2 * level * (2 * y - 1) + rng.normal(size=n)
+    return X.assign(synthetic_injury_flag=flag.astype(int),
+                    synthetic_loss_type=pd.Categorical(cat, categories=range(5)),
+                    synthetic_severity_score=score)
 
 
-ex = extract_hospital(latest, "notes_text")
+def coverage_at_precision(p_val, y_val, p_test, target):
+    p, r, t = precision_recall_curve(y_val, p_val)
+    ok = t[p[:-1] >= target]
+    return 0.0 if len(ok) == 0 else float((p_test >= ok[0]).mean())
 
-ex.select(F.count("*").alias("n"),
-          F.sum("hospital_mentioned").alias("mentions"),
-          F.count("hospital_admit_date").alias("admit"),
-          F.count("hospital_discharge_date").alias("discharge"),
-          F.count("days_in_hospital").alias("days")).show()
+
+def sensitivity(Xtr, ytr, Xva, yva, Xte, yte, levels, seeds, target):
+    rows = []
+    for lv in levels:
+        for seed in seeds:
+            rng = np.random.default_rng(seed)
+            A, B, C = [synthetic_features(X, y, lv, rng) for X, y in ((Xtr, ytr), (Xva, yva), (Xte, yte))]
+            m = HistGradientBoostingClassifier(categorical_features="from_dtype", random_state=seed).fit(A, ytr)
+            pva, pte = m.predict_proba(B)[:, 1], m.predict_proba(C)[:, 1]
+            rows.append((lv, average_precision_score(yte, pte), coverage_at_precision(pva, yva, pte, target)))
+    r = pd.DataFrame(rows, columns=["level", "avg_precision", "fast_track_rate"])
+    return r.groupby("level").agg(["mean", "std"]).round(3)
