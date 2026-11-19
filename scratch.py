@@ -1,50 +1,23 @@
-import re
-import html
-from IPython.display import HTML, display
-from ipywidgets import interact, IntSlider
+from pyspark.sql import functions as F, Window
 
-def highlight_html(text, spans):
-    out, pos = [], 0
-    for s, e in sorted(spans):
-        if s < pos:
-            continue
-        out.append(html.escape(text[pos:s]))
-        out.append(f'<mark style="background:#ffe08a">{html.escape(text[s:e])}</mark>')
-        pos = e
-    out.append(html.escape(text[pos:]))
-    return "".join(out)
+def notes_since_last_run(runs, run_dates, notes, key, run_id_col, run_date_col, note_date_col, note_col, window_days, sep=" "):
+    r = runs.join(run_dates, run_id_col)
+    w = Window.partitionBy(key).orderBy(run_date_col, run_id_col)
+    r = r.withColumn("_prev", F.lag(run_date_col).over(w))
+    n = notes.select(F.col(key).alias("_k"), note_date_col, note_col)
+    cond = ((r[key] == n["_k"]) & (n[note_date_col] <= r[run_date_col])
+            & (n[note_date_col] > F.date_sub(r[run_date_col], window_days))
+            & (r["_prev"].isNull() | (n[note_date_col] > r["_prev"])))
+    j = r.join(n, cond, "left")
+    has_note = F.col(note_col).isNotNull()
+    agg = (j.groupBy(key, run_id_col)
+            .agg(F.sort_array(F.collect_list(F.when(has_note, F.struct(note_date_col, note_col)))).alias("_s"),
+                 F.count(F.when(has_note, 1)).alias("n_notes"),
+                 F.min(F.when(has_note, F.col(note_date_col))).alias("first_note"),
+                 F.max(F.when(has_note, F.col(note_date_col))).alias("last_note")))
+    text = F.concat_ws(sep, F.col(f"_s.{note_col}"))
+    return (agg.withColumn("notes_text", F.when(F.size("_s") > 0, text)).drop("_s")
+               .join(r.drop("_prev"), [key, run_id_col]))
 
-def get_spans(keywords, text):
-    kws = sorted({k.strip() for k in (keywords or "").split(",") if k.strip()}, key=len, reverse=True)
-    if not kws:
-        return []
-    pat = re.compile("|".join(re.escape(k) for k in kws), re.IGNORECASE)
-    return [(m.start(), m.end()) for m in pat.finditer(text)]
-
-def outcome_mask(pdf, pred_col, label_col, positive):
-    pred = pdf[pred_col].apply(lambda a: a is not None and positive in list(a))   # AI label is an array
-    actual = pdf[label_col] == positive                                           # other label is a string
-    return {"fp": pred & ~actual, "tp": pred & actual, "fn": ~pred & actual, "tn": ~pred & ~actual}
-
-def all_classes(pdf, pred_col, label_col):
-    ai = {str(c) for a in pdf[pred_col] if a is not None for c in a}
-    return sorted(ai | set(pdf[label_col].dropna()))
-
-def make_viewer(pdf, pred_col, label_col, id_col, text_col, kw_col):
-    def show(cls, which="fp", i=0):
-        sub = pdf[outcome_mask(pdf, pred_col, label_col, cls)[which]]
-        if sub.empty:
-            return display(HTML(f"no {which} rows for {html.escape(str(cls))}"))
-        r = sub.iloc[min(i, len(sub) - 1)]
-        head = f"<b>{html.escape(str(r[id_col]))}</b> &nbsp; {pred_col}={html.escape(str(r[pred_col]))} &nbsp; {label_col}={html.escape(str(r[label_col]))} &nbsp; ({min(i, len(sub)-1) + 1} of {len(sub)})"
-        body = highlight_html(r[text_col], get_spans(r[kw_col], r[text_col]))
-        display(HTML(f"<div style='max-width:900px;line-height:1.5'>{head}<hr>{body}</div>"))
-    return show
-
-def run_viewer(pdf, pred_col, label_col, id_col, text_col, kw_col):
-    show = make_viewer(pdf, pred_col, label_col, id_col, text_col, kw_col)
-    interact(show, cls=all_classes(pdf, pred_col, label_col), which=["fp", "tp", "fn", "tn"],
-             i=IntSlider(min=0, max=len(pdf) - 1, step=1, value=0))
-
-pdf = df.limit(2000).toPandas()
-run_viewer(pdf, "ai_label", "spacy_label", "claim_id", "notes_text", "keywords")
+out = notes_since_last_run(runs, run_dates, notes, "claim_id", "model_run_id", "run_date", "note_date", "note_text", 7)
+out.select(F.max(F.datediff("last_note", "first_note")).alias("widest_span_days")).show()   # should be 7 or less
