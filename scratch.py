@@ -1,34 +1,71 @@
-from pyspark.sql import functions as F, Window
+import re
+import html
+import ipywidgets as widgets
+from IPython.display import HTML, display, clear_output
 
-def build_run_dates(df, run_id_col, date_col, out_col="run_date"):
-    return df.groupBy(run_id_col).agg(F.max(date_col).alias(out_col))
+def highlight_html(text, spans):
+    out, pos = [], 0
+    for s, e in sorted(spans):
+        if s < pos:
+            continue
+        out.append(html.escape(text[pos:s]))
+        out.append(f'<mark style="background:#ffe08a">{html.escape(text[s:e])}</mark>')
+        pos = e
+    out.append(html.escape(text[pos:]))
+    return "".join(out)
 
-def notes_since_last_run(runs, run_dates, notes, key, run_id_col, run_date_col, note_date_col, note_col, sep=" "):
-    r = runs.join(run_dates, run_id_col)
-    w = Window.partitionBy(key).orderBy(run_date_col, run_id_col)
-    r = r.withColumn("_prev", F.lag(run_date_col).over(w))
-    n = notes.select(F.col(key).alias("_k"), note_date_col, note_col)
-    cond = ((r[key] == n["_k"]) & (n[note_date_col] <= r[run_date_col])
-            & (r["_prev"].isNull() | (n[note_date_col] > r["_prev"])))
-    j = r.join(n, cond, "left")
-    has_note = F.col(note_col).isNotNull()
-    agg = (j.groupBy(key, run_id_col)
-            .agg(F.sort_array(F.collect_list(F.when(has_note, F.struct(note_date_col, note_col)))).alias("_s"),
-                 F.count(F.when(has_note, 1)).alias("n_notes"),
-                 F.min(F.when(has_note, F.col(note_date_col))).alias("first_note"),
-                 F.max(F.when(has_note, F.col(note_date_col))).alias("last_note")))
-    text = F.concat_ws(sep, F.col(f"_s.{note_col}"))
-    return (agg.withColumn("notes_text", F.when(F.size("_s") > 0, text)).drop("_s")
-               .join(r.drop("_prev"), [key, run_id_col]))
+def get_spans(keywords, text):
+    kws = sorted({k.strip() for k in (keywords or "").split(",") if k.strip()}, key=len, reverse=True)
+    if not kws:
+        return []
+    pat = re.compile("|".join(re.escape(k) for k in kws), re.IGNORECASE)
+    return [(m.start(), m.end()) for m in pat.finditer(text)]
 
-def notes_for_runs(model_output, notes, key, run_id_col, score_date_col, note_date_col, note_col, sep=" "):
-    run_dates = build_run_dates(model_output, run_id_col, score_date_col)
-    runs = model_output.select(key, run_id_col).distinct()
-    return notes_since_last_run(runs, run_dates, notes, key, run_id_col, "run_date", note_date_col, note_col, sep)
+def outcome_mask(pdf, pred_col, label_col, positive):
+    pred = pdf[pred_col].apply(lambda a: a is not None and positive in list(a))   # AI label is an array
+    actual = pdf[label_col] == positive                                           # other label is a string
+    return {"fp": pred & ~actual, "tp": pred & actual, "fn": ~pred & actual, "tn": ~pred & ~actual}
 
-def latest_rows(df, key, seq_col):
-    w = Window.partitionBy(key).orderBy(F.col(seq_col).desc())
-    return df.withColumn("_rn", F.row_number().over(w)).filter("_rn = 1").drop("_rn")
+def all_classes(pdf, pred_col, label_col):
+    ai = {str(c) for a in pdf[pred_col] if a is not None for c in a}
+    return sorted(ai | set(pdf[label_col].dropna()))
 
-out = notes_for_runs(model_output, notes, "claim_id", "model_run_id", "score_date", "note_date", "note_text")
-latest = latest_rows(out, "claim_id", "model_run_id")
+def run_viewer(pdf, pred_col, label_col, id_col, text_col, kw_col):
+    cls_dd = widgets.Dropdown(options=all_classes(pdf, pred_col, label_col), description="class")
+    which_dd = widgets.Dropdown(options=[("false positive", "fp"), ("true positive", "tp"), ("false negative", "fn"), ("true negative", "tn")], description="outcome")
+    claim_dd = widgets.Dropdown(description="claim")
+    out = widgets.Output()
+
+    def group():
+        return pdf[outcome_mask(pdf, pred_col, label_col, cls_dd.value)[which_dd.value]]
+
+    def render(_=None):
+        sub = group()
+        with out:
+            clear_output(wait=True)
+            if sub.empty or claim_dd.value is None:
+                display(HTML("no claims in this group"))
+                return
+            r = sub.iloc[claim_dd.value]
+            text, kws = r[text_col], r[kw_col]
+            n = len(get_spans(kws, text))
+            head = (f"<b>{html.escape(str(r[id_col]))}</b> &nbsp; {pred_col}={html.escape(str(r[pred_col]))} &nbsp; {label_col}={html.escape(str(r[label_col]))}"
+                    f"<br>keywords: {html.escape(str(kws))} &nbsp; ({n} highlighted) &nbsp; text length: {len(text)}")
+            display(HTML(f"<div style='max-width:900px;line-height:1.5'>{head}<hr>{highlight_html(text, get_spans(kws, text))}</div>"))
+
+    def refresh(_=None):
+        sub = group()
+        claim_dd.unobserve(render, names="value")
+        claim_dd.options = [(str(v), i) for i, v in enumerate(sub[id_col])]
+        claim_dd.value = 0 if len(sub) else None
+        claim_dd.observe(render, names="value")
+        render()
+
+    cls_dd.observe(refresh, names="value")
+    which_dd.observe(refresh, names="value")
+    claim_dd.observe(render, names="value")
+    display(widgets.HBox([cls_dd, which_dd, claim_dd]), out)
+    refresh()
+
+pdf = out.limit(2000).toPandas()
+run_viewer(pdf, "ai_label", "spacy_label", "claim_id", "notes_text", "keywords")
