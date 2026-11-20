@@ -1,10 +1,18 @@
 from pyspark.sql import functions as F
+from pyspark.sql.types import NumericType, BooleanType
 
 
-def drop_sparse(df, cols, min_count):
-    counts = df.select([F.count(F.when(F.col(c).isNotNull() & (F.col(c) != 0), 1)).alias(c) for c in cols]).first().asDict()
-    sparse = [c for c in cols if counts[c] < min_count]
-    return df.drop(*sparse), sparse
+def occurs(df, c):
+    t = df.schema[c].dataType
+    if isinstance(t, NumericType):
+        return F.col(c).isNotNull() & (F.col(c) != 0)
+    if isinstance(t, BooleanType):
+        return F.coalesce(F.col(c), F.lit(False))
+    return F.col(c).isNotNull()
+
+def drop_sparse(df, min_count):
+    counts = df.select([F.count(F.when(occurs(df, c), 1)).alias(c) for c in df.columns]).first().asDict()
+    return df.drop(*[c for c in df.columns if counts[c] < min_count])
 
 def within_days(df, col_a, col_b, new_col, threshold):
     gap = F.abs(F.datediff(F.to_date(col_a), F.to_date(col_b)))
