@@ -1,3 +1,11 @@
+from pyspark.sql import Window, functions as F
+
+
+def bucket_rare(df, col, min_count, other="other"):
+    v = F.when(F.trim(F.col(col)) == "", None).otherwise(F.col(col))
+    n = F.count(F.lit(1)).over(Window.partitionBy(v))
+    return df.withColumn(col, F.when(v.isNull(), None).when(n < min_count, F.lit(other)).otherwise(v))
+    
 from pyspark.sql import functions as F
 from pyspark.sql.types import NumericType, BooleanType
 
