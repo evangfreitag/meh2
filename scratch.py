@@ -3,7 +3,16 @@ from pyspark.sql import Window, functions as F
 import numpy as np
 import pandas as pd
 
-q = 0.35  # the fast-track rate your normal run gets
+
+
+from pyspark.sql import functions as F
+
+
+def replace_random(df, col, frac, value, seed):
+    new = F.lit(value).cast(df.schema[col].dataType)
+    return df.withColumn(col, F.when(F.rand(seed) < frac, new).otherwise(F.col(col)))
+data = replace_random(df=data, col="synthetic_loss_type", frac=0.8, value=0, seed=2)
+
 cut = np.quantile(model.predict_proba(C_test)[:, 1], 1 - q)
 mask_fp(model, C_test, y_test, groups, cut)
 
