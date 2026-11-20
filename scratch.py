@@ -1,5 +1,8 @@
 from pyspark.sql import Window, functions as F
 
+print(y_train.dtype, y_train.isna().sum(), y_train.unique()[:10])
+
+
 obj = [c for c in num_cols if X[c].dtype == "object"]
 X[obj] = X[obj].apply(pd.to_numeric, errors="coerce")
 
