@@ -1,3 +1,10 @@
+from pyspark.sql import functions as F
+
+
+def within_days(df, col_a, col_b, new_col, threshold):
+    gap = F.abs(F.datediff(F.to_date(col_a), F.to_date(col_b)))
+    return df.withColumn(new_col, F.coalesce((gap <= threshold).cast("int"), F.lit(0)))
+
 AMBULANCE = r"(?i)\b(ambulance|paramedics?)\b|\bEMS\b"
 ER = r"(?i)\b(emergency (room|department|dept)|urgent care)\b|\bER\b"
 
