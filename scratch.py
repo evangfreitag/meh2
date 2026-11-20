@@ -1,5 +1,9 @@
 from pyspark.sql import Window, functions as F
 
+obj = [c for c in num_cols if X[c].dtype == "object"]
+X[obj] = X[obj].apply(pd.to_numeric, errors="coerce")
+
+
 def within_days(df, col_a, col_b, new_col, threshold, flag_col):
     gap = F.abs(F.datediff(F.to_date(col_a), F.to_date(col_b)))
     ok = (gap <= threshold) & F.col(flag_col).cast("boolean")
