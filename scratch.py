@@ -1,6 +1,11 @@
 from pyspark.sql import functions as F
 
 
+def drop_sparse(df, cols, min_count):
+    counts = df.select([F.count(F.when(F.col(c).isNotNull() & (F.col(c) != 0), 1)).alias(c) for c in cols]).first().asDict()
+    sparse = [c for c in cols if counts[c] < min_count]
+    return df.drop(*sparse), sparse
+
 def within_days(df, col_a, col_b, new_col, threshold):
     gap = F.abs(F.datediff(F.to_date(col_a), F.to_date(col_b)))
     return df.withColumn(new_col, F.coalesce((gap <= threshold).cast("int"), F.lit(0)))
