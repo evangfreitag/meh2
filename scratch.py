@@ -3,7 +3,11 @@ from pyspark.sql import Window, functions as F
 import numpy as np
 import pandas as pd
 
+def print_importance(imp, name_col, value_col, top_n):
+    out = imp.sort_values(value_col, ascending=False).head(top_n)
+    print(out[[name_col, value_col]].round(4).to_csv(sep="\t", index=False))
 
+print_importance(imp=importance_df, name_col="feature", value_col="importance", top_n=20)
 
 from pyspark.sql import functions as F
 
