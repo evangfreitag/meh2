@@ -1,5 +1,10 @@
 from pyspark.sql import Window, functions as F
 
+def within_days(df, col_a, col_b, new_col, threshold, flag_col):
+    gap = F.abs(F.datediff(F.to_date(col_a), F.to_date(col_b)))
+    ok = (gap <= threshold) & F.col(flag_col).cast("boolean")
+    return df.withColumn(new_col, F.coalesce(ok.cast("int"), F.lit(0)))
+
 
 def bucket_rare(df, col, min_count, other="other"):
     v = F.when(F.trim(F.col(col)) == "", None).otherwise(F.col(col))
