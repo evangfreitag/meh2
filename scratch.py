@@ -1,10 +1,33 @@
 from pyspark.sql import Window, functions as F
 
-print(y_train.dtype, y_train.isna().sum(), y_train.unique()[:10])
+import numpy as np
+import pandas as pd
+from itertools import combinations
+from sklearn.metrics import average_precision_score, precision_recall_curve
 
 
-obj = [c for c in num_cols if X[c].dtype == "object"]
-X[obj] = X[obj].apply(pd.to_numeric, errors="coerce")
+def masked_score(model, Xva, yva, Xte, yte, cols, target):
+    Xv, Xt = Xva.copy(), Xte.copy()
+    Xv[cols] = np.nan
+    Xt[cols] = np.nan
+    pv, pt = model.predict_proba(Xv)[:, 1], model.predict_proba(Xt)[:, 1]
+    p, r, t = precision_recall_curve(yva, pv)
+    ok = t[p[:-1] >= target]
+    cut = ok[0] if len(ok) else np.inf
+    sel = pt >= cut
+    prec = float(yte[sel].mean()) if sel.any() else np.nan
+    return average_precision_score(yte, pt), float(sel.mean()), prec
+
+
+def mask_table(model, Xva, yva, Xte, yte, groups, target):
+    yva, yte = np.asarray(yva), np.asarray(yte)
+    rows = []
+    for k in range(len(groups) + 1):
+        for combo in combinations(groups, k):
+            cols = [c for g in combo for c in groups[g]]
+            ap, rate, prec = masked_score(model, Xva, yva, Xte, yte, cols, target)
+            rows.append((", ".join(combo) or "none masked", round(ap, 3), round(rate, 3), round(prec, 3)))
+    return pd.DataFrame(rows, columns=["masked", "avg_precision", "fast_track_rate", "precision_at_cutoff"])
 
 
 def within_days(df, col_a, col_b, new_col, threshold, flag_col):
