@@ -1,5 +1,29 @@
 from pyspark.sql import Window, functions as F
 
+import numpy as np
+import pandas as pd
+
+
+def mask_random(model, Xte, yte, groups, cutoff, p, n_runs, seed):
+    rng = np.random.default_rng(seed)
+    yte = np.asarray(yte)
+    rows = []
+    for _ in range(n_runs):
+        hide = [g for g in groups if rng.random() < p]
+        X = Xte.copy()
+        X[[c for g in hide for c in groups[g]]] = np.nan
+        sel = model.predict_proba(X)[:, 1] >= cutoff
+        rows.append((sel.mean(), yte[sel].mean() if sel.any() else np.nan, 1000 * (sel & (yte == 0)).sum() / len(yte)))
+    r = pd.DataFrame(rows, columns=["fast_track_rate", "precision", "fp_per_1000"])
+    return r.agg(["mean", "std"]).round(3)
+
+
+cut = find_cutoff(aug_model, C_val2, y_val2, 0.9)
+for p in [0, 0.2, 0.4]:
+    print("p =", p)
+    print(mask_random(aug_model, C_test, y_test, groups, cut, p, 30, 0))
+
+
 groups = {"recorded": [...], "reconstructed": [...], "other": [...]}
 
 
