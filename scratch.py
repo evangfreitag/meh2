@@ -1,5 +1,32 @@
 from pyspark.sql import Window, functions as F
 
+
+import numpy as np
+import pandas as pd
+from itertools import combinations
+from sklearn.metrics import precision_recall_curve
+
+
+def find_cutoff(model, Xva, yva, target):
+    p, r, t = precision_recall_curve(yva, model.predict_proba(Xva)[:, 1])
+    return t[p[:-1] >= target][0]
+
+
+def mask_fp(model, Xte, yte, groups, cutoff):
+    yte = np.asarray(yte)
+    rows = []
+    for k in range(len(groups) + 1):
+        for combo in combinations(groups, k):
+            X = Xte.copy()
+            X[[c for g in combo for c in groups[g]]] = np.nan
+            sel = model.predict_proba(X)[:, 1] >= cutoff
+            fp = int((sel & (yte == 0)).sum())
+            rows.append((", ".join(combo) or "none masked", sel.mean(), yte[sel].mean() if sel.any() else np.nan, fp, 1000 * fp / len(yte)))
+    return pd.DataFrame(rows, columns=["masked", "fast_track_rate", "precision", "false_positives", "fp_per_1000"]).round(3)
+
+cut = find_cutoff(model, C_val2, y_val2, 0.9)
+mask_fp(model, C_test, y_test, groups, cut)
+
 import numpy as np
 import pandas as pd
 from itertools import combinations
