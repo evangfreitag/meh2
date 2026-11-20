@@ -1,7 +1,6 @@
-def print_plot_order(ax):
-    names = [t.get_text() for t in ax.get_yticklabels()]
-    values = [p.get_width() for p in ax.patches]
-    for name, value in sorted(zip(names, values), key=lambda x: -x[1]):
-        print(f"{name}\t{value:.4f}")
+def print_importance(result, names, top_n):
+    order = result.importances_mean.argsort()[::-1][:top_n]
+    for i in order:
+        print(f"{names[i]}\t{result.importances_mean[i]:.4f}")
 
-print_plot_order(ax=plt.gca())
+print_importance(result=your_bunch, names=X_test.columns, top_n=20)
