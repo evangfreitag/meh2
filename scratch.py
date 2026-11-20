@@ -1,5 +1,7 @@
 from pyspark.sql import Window, functions as F
 
+groups = {"recorded": [...], "reconstructed": [...], "other": [...]}
+
 
 import numpy as np
 import pandas as pd
