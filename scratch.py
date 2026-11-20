@@ -3,6 +3,11 @@ from pyspark.sql import Window, functions as F
 import numpy as np
 import pandas as pd
 
+q = 0.35  # the fast-track rate your normal run gets
+cut = np.quantile(model.predict_proba(C_test)[:, 1], 1 - q)
+mask_fp(model, C_test, y_test, groups, cut)
+
+
 
 def mask_random(model, Xte, yte, groups, cutoff, p, n_runs, seed):
     rng = np.random.default_rng(seed)
