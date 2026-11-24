@@ -1,15 +1,13 @@
 from pyspark.sql import functions as F
 
-def add_length(df, text_col):
-    return df.withColumn("n_words", F.size(F.split(F.col(text_col), r"\s+")))
-
-def confidence_by_length(df, confidence_col, bucket_size):
+def exploded_flags(df, prob_col, flags_col, scores_col):
+    pairs = F.arrays_zip(F.col(flags_col).alias("flag"), F.col(scores_col).alias("score"))
     return (
-        df.withColumn("length_bucket", (F.floor(F.col("n_words") / bucket_size) * bucket_size))
-        .groupBy("length_bucket")
-        .agg(F.count("*").alias("claims"), F.avg(confidence_col).alias("avg_confidence"))
-        .orderBy("length_bucket")
+        df.withColumn("pair", F.explode(pairs))
+        .withColumn("flag", F.col("pair.flag"))
+        .withColumn("score", F.col("pair.score"))
+        .drop("pair", flags_col, scores_col)
+        .orderBy(F.desc(prob_col), F.desc("score"))
     )
 
-negatives = add_length(df=df.where(F.col("severity") == 0), text_col="note_text")
-confidence_by_length(df=negatives, confidence_col="confidence", bucket_size=25).show(50)
+exploded_flags(df=df, prob_col="predicted_probability", flags_col="flags", scores_col="scores").show(50, False)
