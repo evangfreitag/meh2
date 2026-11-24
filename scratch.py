@@ -1,19 +1,15 @@
-import pandas as pd
-from sklearn.ensemble import HistGradientBoostingClassifier
-from sklearn.metrics import roc_auc_score
+from pyspark.sql import functions as F
 
-def single_column_auc(X_train, y_train, X_test, y_test, cols):
-    rows = []
-    for col in cols:
-        if pd.api.types.is_numeric_dtype(X_train[col]):
-            m = HistGradientBoostingClassifier(max_depth=3, max_iter=30)
-            m.fit(X_train[[col]], y_train)
-            p = m.predict_proba(X_test[[col]])[:, 1]
-        else:
-            rate = y_train.groupby(X_train[col].fillna("missing")).mean()
-            p = X_test[col].fillna("missing").map(rate).fillna(y_train.mean())
-        rows.append((col, roc_auc_score(y_test, p)))
-    for name, auc in sorted(rows, key=lambda r: -r[1])[:15]:
-        print(f"{name}\t{auc:.3f}")
+def add_length(df, text_col):
+    return df.withColumn("n_words", F.size(F.split(F.col(text_col), r"\s+")))
 
-single_column_auc(X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test, cols=X_train.columns)
+def confidence_by_length(df, confidence_col, bucket_size):
+    return (
+        df.withColumn("length_bucket", (F.floor(F.col("n_words") / bucket_size) * bucket_size))
+        .groupBy("length_bucket")
+        .agg(F.count("*").alias("claims"), F.avg(confidence_col).alias("avg_confidence"))
+        .orderBy("length_bucket")
+    )
+
+negatives = add_length(df=df.where(F.col("severity") == 0), text_col="note_text")
+confidence_by_length(df=negatives, confidence_col="confidence", bucket_size=25).show(50)
