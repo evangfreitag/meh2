@@ -1,9 +1,13 @@
-import matplotlib.pyplot as plt
-def plot_kde(df, col, group_col):
-    pdf = df.select(col, group_col).toPandas()
-    pdf.groupby(group_col)[col].plot.kde(legend=True)
-    plt.xlabel(col)
-    plt.xlim(0, 1)
-    plt.show()
+import pandas as pd
+from pyspark.ml.classification import LogisticRegression
+from pyspark.ml.feature import VectorAssembler
+from pyspark.sql import functions as F
 
-plot_kde(df=classified, col="predicted_probability", group_col="ai_flagged")
+def fit_flag_model(df, flag_cols, label_col, reg_param):
+    data = df.select(*flag_cols, F.col(label_col).cast("double").alias("label")).na.fill(0.0)
+    vec = VectorAssembler(inputCols=flag_cols, outputCol="features").transform(data)
+    model = LogisticRegression(featuresCol="features", labelCol="label", elasticNetParam=1.0, regParam=reg_param).fit(vec)
+    coefs = pd.Series(model.coefficients.toArray(), index=flag_cols)
+    return coefs[coefs != 0].sort_values(ascending=False)
+
+display(fit_flag_model(df=claims, flag_cols=flag_columns, label_col="ai_flagged", reg_param=0.01).reset_index())
